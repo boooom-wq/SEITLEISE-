@@ -87,7 +87,6 @@
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.15} }
     .dot { display: inline-block; animation: blink 1.4s ease-in-out infinite; }
 
-    /* dB Meter */
     .db-row { display: flex; align-items: center; gap: 1.25rem; }
     .db-number {
       font-family: 'DM Mono', monospace; font-size: 2.2rem;
@@ -102,7 +101,6 @@
       border: 1px solid var(--border); border-radius: 99px;
       overflow: hidden; position: relative;
     }
-    /* Segmentierter Meter-Look */
     .bar-track::after {
       content: '';
       position: absolute; inset: 0;
@@ -124,7 +122,6 @@
     }
     .bar-labels { display: flex; justify-content: space-between; font-size: .65rem; color: var(--text-dim); }
 
-    /* Kalibrierung */
     .calib-row {
       display: flex; align-items: center; gap: .6rem;
       margin-top: .7rem; font-size: .75rem; color: var(--text-dim);
@@ -139,7 +136,6 @@
 
     .divider { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
 
-    /* Limit control */
     .limit-row { display: flex; align-items: center; gap: .9rem; flex-wrap: wrap; }
     .limit-row label {
       font-size: .73rem; font-weight: 500; color: var(--text-dim);
@@ -155,7 +151,6 @@
     input[type=number]::-webkit-inner-spin-button { opacity: 0; }
     .db-unit { font-size: .8rem; color: var(--text-dim); }
 
-    /* Buttons */
     .btn-row { display: flex; gap: .75rem; }
     .btn {
       flex: 1; font-family: 'DM Sans', sans-serif; font-size: .88rem;
@@ -218,7 +213,6 @@
       </div>
     </div>
 
-    <!-- Kalibrierungs-Status -->
     <div class="calib-row">
       <div class="calib-dot" id="calibDot"></div>
       <span id="calibStatus">Mikrofon nicht aktiv – Kalibrierung startet mit dem Start</span>
@@ -248,7 +242,6 @@
 </div>
 
 <script>
-  // ── Elemente ─────────────────────────────────────
   const timerEl     = document.getElementById('timer');
   const timerCard   = document.getElementById('timerCard');
   const statusMsg   = document.getElementById('statusMsg');
@@ -265,7 +258,6 @@
   const resetBtn    = document.getElementById('resetBtn');
   const bestTimeVal = document.getElementById('bestTimeVal');
 
-  // ── Zustand ──────────────────────────────────────
   let running     = false;
   let paused      = false;
   let startTime   = null;
@@ -280,16 +272,11 @@
   let analyser    = null;
   let micStream   = null;
   let dataArray   = null;
-  let freqArray   = null;  // für Frequenz-Analyse
+  let freqArray   = null;
 
-  // ── Hochwertige dB-Messung ────────────────────────
-  // Wir nutzen A-Weighting (wie echte Schallpegelmesser):
-  // Das menschliche Ohr ist bei 1–4 kHz am empfindlichsten.
-  // A-Weighting gewichtet Frequenzen entsprechend.
-  const SAMPLE_RATE_DEFAULT = 48000; // wird nach AudioContext-Init überschrieben
+  const SAMPLE_RATE_DEFAULT = 48000;
   let   sampleRate          = SAMPLE_RATE_DEFAULT;
 
-  // A-Weighting Koeffizient für eine gegebene Frequenz (Hz)
   function aWeight(f) {
     if (f < 10) return 0;
     const f2  = f * f;
@@ -299,27 +286,23 @@
     return num / den;
   }
 
-  // Kalibrierung: Hintergrundrauschen messen (1 Sek.)
   const CALIB_FRAMES   = 60;
   let   calibBuffer    = [];
   let   calibrated     = false;
-  let   noiseFloor     = -Infinity; // dB des Hintergrundgeräuschs
-  const NOISE_MARGIN   = 6;         // dB über Hintergrund → Auslösung
+  let   noiseFloor     = -Infinity; 
+  const NOISE_MARGIN   = 6; 
 
-  // Glättung für stabilen Anzeigewert (kein Flackern)
-  const SMOOTH_FAST    = 0.25;  // für Anzeige (schnell)
-  const SMOOTH_SLOW    = 0.05;  // für Peak-Halten
+  const SMOOTH_FAST    = 0.25; 
+  const SMOOTH_SLOW    = 0.05; 
   let   smoothedDb     = 0;
   let   peakDb         = 0;
   let   peakHoldFrames = 0;
-  const PEAK_HOLD      = 30;    // Frames Peak halten
+  const PEAK_HOLD      = 30;    
 
-  // Auslöse-Debounce: verhindert Fehlalarme durch kurze Spitzen
-  const TRIGGER_FRAMES = 3;     // N Frames in Folge über Limit → auslösen
+  const TRIGGER_FRAMES = 3;   
   let   triggerCount   = 0;
 
   function computeWeightedDb() {
-    // FFT-basierte A-weighted RMS
     analyser.getFloatFrequencyData(freqArray);
 
     const binCount  = analyser.frequencyBinCount;
@@ -332,7 +315,7 @@
       const freq = i * binWidth;
       if (freq > 20000) break;
 
-      const linearAmp = Math.pow(10, freqArray[i] / 20); // dBFS → linear
+      const linearAmp = Math.pow(10, freqArray[i] / 20);
       const power     = linearAmp * linearAmp;
       const w         = aWeight(freq);
 
@@ -342,12 +325,10 @@
 
     if (totalWeight === 0 || weightedPower <= 0) return -Infinity;
 
-    // Normiert, dann in dB
     const rmsWeighted = Math.sqrt(weightedPower / totalWeight);
-    return 20 * Math.log10(rmsWeighted) + 90; // +90 Offset → positive Skala
+    return 20 * Math.log10(rmsWeighted) + 90; 
   }
 
-  // ── Kalibrierung ─────────────────────────────────
   function runCalibration(dbVal) {
     if (calibrated) return;
 
@@ -357,7 +338,6 @@
     calibStatus.textContent = `Kalibrierung … ${progress}%`;
 
     if (calibBuffer.length >= CALIB_FRAMES) {
-      // Nimm den 85. Perzentil als Noise-Floor (robust gegen Ausreißer)
       const sorted   = [...calibBuffer].sort((a, b) => a - b);
       noiseFloor     = sorted[Math.floor(sorted.length * 0.85)];
       calibrated     = true;
@@ -366,7 +346,6 @@
     }
   }
 
-  // ── Limit Marker & Slider ─────────────────────────
   function updateMarker() {
     const maxDb = 100;
     limitMarker.style.left = Math.min(100, (dbLimit / maxDb) * 100) + '%';
@@ -384,7 +363,6 @@
   });
   updateMarker();
 
-  // ── Hilfsfunktionen ──────────────────────────────
   function formatTime(ms) {
     const s   = Math.floor(ms / 1000);
     const min = String(Math.floor(s / 60)).padStart(2, '0');
@@ -397,33 +375,28 @@
     timerCard.className = 'card' + (state ? ' glow-' + state : '');
   }
 
-  // ── Timer Loop ───────────────────────────────────
   function timerLoop() {
     if (!running || paused) return;
     timerEl.textContent = formatTime(Math.floor(performance.now() - startTime - totalPaused));
     animFrame = requestAnimationFrame(timerLoop);
   }
 
-  // ── Mikrofon Loop ────────────────────────────────
   function micLoop() {
     if (!analyser) return;
     rafMic = requestAnimationFrame(micLoop);
 
     const rawDb = computeWeightedDb();
 
-    // Kalibrierung in den ersten CALIB_FRAMES
     if (!calibrated) {
       runCalibration(rawDb);
     }
 
-    // Glättung
     if (rawDb > -Infinity) {
       smoothedDb = smoothedDb === 0
         ? rawDb
         : smoothedDb + SMOOTH_FAST * (rawDb - smoothedDb);
     }
 
-    // Peak-Halten
     if (smoothedDb > peakDb) {
       peakDb = smoothedDb;
       peakHoldFrames = PEAK_HOLD;
@@ -438,21 +411,17 @@
     const displayDb = Math.max(0, smoothedDb);
     const maxDb     = 100;
 
-    // dB-Anzeige
     dbValue.textContent = displayDb.toFixed(1) + ' dB';
 
     const ratio = displayDb / dbLimit;
     dbValue.className = 'db-number' + (ratio >= 0.92 ? ' danger' : ratio >= 0.70 ? ' warn' : '');
 
-    // Balken
     barFill.style.width      = Math.min(100, (displayDb / maxDb) * 100) + '%';
     barFill.style.background = ratio >= 0.92 ? 'var(--red)'
                              : ratio >= 0.70 ? 'var(--yellow)'
                              : 'var(--green)';
 
-    // ── Auslösung mit Debounce ────────────────────
     if (running && !paused && calibrated) {
-      // Auslösen wenn über Limit UND über Noise-Floor + Margin
       const overLimit      = displayDb > dbLimit;
       const overNoiseFloor = displayDb > noiseFloor + NOISE_MARGIN;
 
@@ -467,19 +436,17 @@
     }
   }
 
-  // ── Start ────────────────────────────────────────
   async function startChallenge() {
     if (running) return;
     try {
-      // Höchste Audio-Qualität anfordern
       micStream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          echoCancellation:   false,  // AUS: verfälscht den echten Pegel
-          noiseSuppression:   false,  // AUS: wir wollen das Rauschen messen
-          autoGainControl:    false,  // AUS: kein automatisches Verstärken
-          sampleRate:         48000,  // 48 kHz für hohe Frequenzauflösung
+          echoCancellation:   false, 
+          noiseSuppression:   false, 
+          autoGainControl:    false,  
+          sampleRate:         48000, 
           channelCount:       1,
-          latency:            0,      // möglichst geringe Latenz
+          latency:            0, 
         }
       });
     } catch {
@@ -492,8 +459,8 @@
     sampleRate = audioCtx.sampleRate;
 
     analyser             = audioCtx.createAnalyser();
-    analyser.fftSize     = 8192;   // Hohe FFT-Auflösung → genaue Frequenzanalyse
-    analyser.smoothingTimeConstant = 0.0; // Keine Browser-Glättung – wir machen das selbst
+    analyser.fftSize     = 8192;  
+    analyser.smoothingTimeConstant = 0.0;
     analyser.minDecibels = -100;
     analyser.maxDecibels = 0;
 
@@ -502,7 +469,6 @@
 
     audioCtx.createMediaStreamSource(micStream).connect(analyser);
 
-    // Zustand zurücksetzen
     calibBuffer = []; calibrated = false; triggerCount = 0;
     smoothedDb = 0; peakDb = 0; peakHoldFrames = 0;
     calibDot.className = 'calib-dot active';
@@ -524,7 +490,6 @@
     micLoop();
   }
 
-  // ── Pause / Weiter ───────────────────────────────
   function togglePause() {
     if (!running) return;
 
@@ -542,7 +507,6 @@
       totalPaused += performance.now() - pausedAt;
       paused = false; pausedAt = null;
       triggerCount = 0;
-      // Hintergrund neu kalibrieren nach Pause
       calibBuffer = []; calibrated = false;
       calibDot.className = 'calib-dot active';
       calibStatus.textContent = 'Neu-Kalibrierung …';
@@ -555,7 +519,6 @@
     }
   }
 
-  // ── Stop ─────────────────────────────────────────
   function stopChallenge(manual = false) {
     if (!running) return;
     running = false; paused = false;
@@ -572,7 +535,7 @@
       setCardGlow(null);
     } else {
       timerEl.className     = 'timer lost';
-      statusMsg.textContent = '📢 Zu laut – Challenge verloren!';
+      statusMsg.textContent = 'Zu laut – Challenge verloren!';
       statusMsg.className   = 'status-msg lost';
       setCardGlow('red');
       if (navigator.vibrate) navigator.vibrate([200, 80, 200]);
@@ -590,7 +553,6 @@
     limitSlider.disabled = limitInput.disabled = false;
   }
 
-  // ── Reset ────────────────────────────────────────
   function resetChallenge() {
     if (running) stopChallenge(true);
     cancelAnimationFrame(rafMic);
@@ -619,7 +581,6 @@
     limitSlider.disabled = limitInput.disabled = false;
   }
 
-  // ── Events ───────────────────────────────────────
   startBtn.addEventListener('click', () => { if (!running) startChallenge(); });
   pauseBtn.addEventListener('click', togglePause);
   resetBtn.addEventListener('click', resetChallenge);
